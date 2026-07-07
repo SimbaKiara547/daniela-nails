@@ -800,7 +800,7 @@ function showDetail(id){
       ${canP?`<button class="act-chip ac-proc" onclick="cambiarEstado('${id}','proceso')">▶ Proceso</button>`:''}
       ${canF?`<button class="act-chip ac-fin" onclick="cambiarEstado('${id}','finalizada')">★ Finalizar</button>`:''}
       <button class="act-chip ac-edit" onclick="closeSheet('detailSheet');openNewCita('${id}')">✎ Editar</button>
-      ${waUrl?`<button class="act-chip ac-wa" onclick="window.open('${waUrl}','_blank')">💬 WA</button>`:''}
+      ${waUrl?`<a href="${waUrl}" target="_blank" rel="noopener" class="act-chip ac-wa" style="text-decoration:none;display:flex;align-items:center;justify-content:center">💬 WA</a>`:''}
       <button class="act-chip ac-del" onclick="pedirEliminar('${id}')">🗑</button>
     </div>`;
   openSheet('detailSheet');
@@ -890,7 +890,6 @@ async function saveCita(){
   const hora=document.getElementById('fHora').value;
   const notas=document.getElementById('fNotas').value.trim();
   const estado=document.getElementById('fEst').value;
-  // WA mode viene de la configuración global, no del toggle
 
   if(!nombre){showToast('El nombre es obligatorio','err');return}
   if(!svcId){showToast('Selecciona un servicio','err');return}
@@ -901,33 +900,57 @@ async function saveCita(){
   const svc=DB.servicios.find(s=>s.id===svcId);
   const payload={nombre,tel,email,svc_id:svcId,tec_id:tecId,fecha,hora:hora+':00',notas,estado,precio:svc?.precio||0,duracion:svc?.duracion||60};
 
+  // ── PREPARAR WHATSAPP ANTES DEL AWAIT ──────────────────────────────────────
+  // Los navegadores móviles bloquean window.open() después de operaciones async.
+  // Solución: crear el enlace ANTES del await y guardarlo, luego solo hacer click.
+  const waMode=DB.cfg?.wa_mode||'auto';
+  const esNueva=!editId;
+  let waLink=null;
+  if(esNueva&&tel&&waMode==='auto'){
+    const waUrl=buildWAUrl(payload,svc);
+    waLink=document.createElement('a');
+    waLink.href=waUrl;
+    waLink.target='_blank';
+    waLink.rel='noopener';
+    waLink.style.display='none';
+    document.body.appendChild(waLink);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   setSyncState('loading','Guardando...');
   const btn=document.getElementById('btnGuardarCita');btn.disabled=true;
 
-  let error,data;
+  let error;
   if(editId){
     ({error}=await sb.from('citas').update(payload).eq('id',editId));
   } else {
-    ({error,data}=await sb.from('citas').insert([payload]).select().single());
+    ({error}=await sb.from('citas').insert([payload]));
   }
 
   btn.disabled=false;
-  if(error){showToast('Error al guardar: '+error.message,'err');setSyncState('err','Error');return}
+
+  if(error){
+    showToast('Error al guardar: '+error.message,'err');
+    setSyncState('err','Error');
+    if(waLink)waLink.remove();
+    return;
+  }
 
   // Recargar citas
   const {data:newCitas}=await sb.from('citas').select('*').order('fecha').order('hora');
   DB.citas=newCitas||[];
 
   closeSheet('citaSheet');
-  renderCalendar();if(currentPage==='citas')renderCitas();updateTopbar();
+  renderCalendar();
+  if(currentPage==='citas')renderCitas();
+  updateTopbar();
   setSyncState('ok','Guardado ✓');
-  showToast(editId?'Cita actualizada ✓':'Cita guardada 💅','ok');
+  showToast(esNueva?'Cita guardada 💅':'Cita actualizada ✓','ok');
 
-  // WhatsApp según el modo configurado
-  const waMode=DB.cfg?.wa_mode||'auto';
-  if(!editId&&tel&&waMode==='auto'){
-    const waUrl=buildWAUrl(payload,svc);
-    setTimeout(()=>window.open(waUrl,'_blank'),700);
+  // Abrir WhatsApp — el enlace ya estaba creado antes del await
+  if(waLink){
+    waLink.click();
+    setTimeout(()=>waLink.remove(),1000);
   }
 }
 
