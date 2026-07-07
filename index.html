@@ -882,7 +882,7 @@ async function saveCita(){
   const hora=document.getElementById('fHora').value;
   const notas=document.getElementById('fNotas').value.trim();
   const estado=document.getElementById('fEst').value;
-  const sendWA=document.getElementById('waToggleCita').classList.contains('on');
+  // WA mode viene de la configuración global, no del toggle
 
   if(!nombre){showToast('El nombre es obligatorio','err');return}
   if(!svcId){showToast('Selecciona un servicio','err');return}
@@ -1122,11 +1122,10 @@ function renderMas(){
   // Cargar config en el formulario
   const cfg=DB.cfg;
   if(cfg){
-    const waTgl=document.getElementById('waToggle');
-    waTgl.className='toggle '+(cfg.wa_enabled?'on':'off');
     document.getElementById('waTpl').value=cfg.wa_template||'';
     document.getElementById('cfgNombre').value=cfg.nombre||'';
     document.getElementById('cfgDir').value=cfg.direccion||'';
+    updateWAModeUI(cfg.wa_mode||'auto');
   }
 }
 
