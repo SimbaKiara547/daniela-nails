@@ -591,7 +591,15 @@ async function loadAll(){
     DB.servicios = svcs.data||[];
     DB.tecnicas  = tecs.data||[];
     DB.citas     = cit.data||[];
-    if(cfg.data)  DB.cfg = {...DB.cfg,...cfg.data};
+    if(cfg.data){
+      DB.cfg={...DB.cfg,...cfg.data};
+      // Si wa_mode no vino de Supabase, buscarlo en localStorage
+      if(!DB.cfg.wa_mode){
+        const local=localStorage.getItem('dn_cfg');
+        if(local){try{const lc=JSON.parse(local);if(lc.wa_mode)DB.cfg.wa_mode=lc.wa_mode;}catch(e){}}
+        if(!DB.cfg.wa_mode)DB.cfg.wa_mode='auto';
+      }
+    }
 
     setSyncState('ok','Sincronizado');
     setTimeout(()=>document.getElementById('syncBadge').style.opacity='0',2000);
@@ -1134,12 +1142,32 @@ function toggleWA(btn){/* deprecated - now using wa_mode radios */}
 async function saveCfg(){
   const wa_mode=document.querySelector('input[name="waMode"]:checked')?.value||'auto';
   const wa_enabled=wa_mode!=='off';
-  const payload={nombre:document.getElementById('cfgNombre').value.trim()||'Daniela Nails',direccion:document.getElementById('cfgDir').value.trim(),wa_enabled,wa_mode,wa_template:document.getElementById('waTpl').value};
+  const nombre=document.getElementById('cfgNombre').value.trim()||'Daniela Nails';
+  const direccion=document.getElementById('cfgDir').value.trim();
+  const wa_template=document.getElementById('waTpl').value;
+
+  // Guardar en memoria siempre (funciona aunque falle Supabase)
+  DB.cfg={...DB.cfg,nombre,direccion,wa_enabled,wa_mode,wa_template};
+  localStorage.setItem('dn_cfg',JSON.stringify(DB.cfg));
+
   setSyncState('loading','Guardando...');
-  const {error}=await sb.from('configuracion').upsert({id:1,...payload});
-  if(error){showToast('Error al guardar','err');return}
-  DB.cfg={...DB.cfg,...payload};
-  setSyncState('ok','Guardado ✓');showToast('Configuración guardada ✓','ok');
+
+  // Intentar sin wa_mode primero (por si la columna no existe)
+  const base={id:1,nombre,direccion,wa_enabled,wa_template};
+  let {error}=await sb.from('configuracion').upsert(base);
+
+  // Si funcionó, intentar también con wa_mode
+  if(!error){
+    await sb.from('configuracion').update({wa_mode}).eq('id',1).then(()=>{});
+  }
+
+  if(error){
+    setSyncState('err','Guardado local');
+    showToast('Configuración guardada localmente ✓','ok');
+  } else {
+    setSyncState('ok','Guardado ✓');
+    showToast('Configuración guardada ✓','ok');
+  }
 }
 
 function loadCfgUI(){
